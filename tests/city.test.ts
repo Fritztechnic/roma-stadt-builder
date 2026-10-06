@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildingAt, buildingsInArea, canPlace, canReplaceBuildings, catalog, emptyCity, footprint, History, parseCity, replaceBuildings } from '../src/city.ts'
+import { buildingAt, buildingsInArea, canPlace, canReplaceBuildings, catalog, emptyCity, expandCity, footprint, History, parseCity, replaceBuildings } from '../src/city.ts'
 import { romanPreset } from '../src/preset.ts'
 import { buildingAtScreen, buildingElevation, fitCamera, screenToTile, tileSize, tileToWorld } from '../src/render.ts'
 
@@ -12,8 +12,8 @@ test('footprints, boundaries and collisions', () => {
   assert.equal(canPlace(city, { ...house, x: 3 }), false)
   assert.equal(canPlace(city, { ...house, x: 4 }), true)
   assert.equal(canPlace(city, { ...house, x: -1 }), false)
-  assert.equal(canPlace(city, { ...house, x: 47 }), false)
-  assert.equal(canPlace(city, { ...house, y: 35 }), false)
+  assert.equal(canPlace(city, { ...house, x: city.width - 1 }), false)
+  assert.equal(canPlace(city, { ...house, y: city.height - 1 }), false)
   assert.equal(canPlace(city, { ...house, x: 1.5 }), false)
   assert.equal(buildingAt(city, 3, 3), house)
   assert.equal(buildingAt(city, 4, 3), undefined)
@@ -24,7 +24,7 @@ test('save round trip and reject invalid imports', () => {
   const city = emptyCity()
   city.buildings.push({ type: 'temple', x: 0, y: 0, rotated: false })
   assert.deepEqual(parseCity(JSON.stringify(city)), city)
-  for (const data of [null, { ...city, version: 2 }, { ...city, width: 999 }, { ...city, buildings: [{ type: 'unknown', x: 0, y: 0, rotated: false }] }, { ...city, buildings: [...city.buildings, ...city.buildings] }, { ...city, buildings: [{ ...city.buildings[0], x: 48 }] }]) {
+  for (const data of [null, { ...city, version: 2 }, { ...city, width: 999 }, { ...city, buildings: [{ type: 'unknown', x: 0, y: 0, rotated: false }] }, { ...city, buildings: [...city.buildings, ...city.buildings] }, { ...city, buildings: [{ ...city.buildings[0], x: city.width }] }]) {
     assert.throws(() => parseCity(JSON.stringify(data)))
   }
 })
@@ -45,6 +45,55 @@ test('a drag is one undo step, redo is cleared by a new edit', () => {
   history.record(next, city)
   assert.equal(history.canRedo, false)
   assert.equal(history.record(JSON.stringify(city), city), false)
+})
+
+test('larger grids preserve old saves and expansion is bounded and undoable', () => {
+  assert.equal(emptyCity().width, 96)
+  assert.equal(emptyCity().height, 72)
+  const oldCity = { ...emptyCity(), width: 48, height: 36 }
+  oldCity.buildings.push({ type: 'house', x: 44, y: 32, rotated: false })
+  const before = JSON.stringify(oldCity)
+  assert.deepEqual(parseCity(before), oldCity)
+  const expanded = expandCity(oldCity)
+  assert.equal(expanded.width, 96)
+  assert.equal(expanded.height, 72)
+  assert.equal(expanded.buildings[0], oldCity.buildings[0])
+  assert.equal(JSON.stringify(oldCity), before)
+  assert.deepEqual(parseCity(JSON.stringify(expanded)), expanded)
+  const history = new History()
+  history.record(before, expanded)
+  assert.deepEqual(history.undo(expanded), oldCity)
+  assert.deepEqual(history.redo(oldCity), expanded)
+  const maximum = expandCity(expanded)
+  assert.equal(maximum.width, 128)
+  assert.equal(maximum.height, 128)
+  assert.deepEqual(expandCity(maximum), maximum)
+})
+
+test('cached picking follows moves, equal replacements, insertions and removals', () => {
+  const city = emptyCity()
+  const camera = { x: 100, y: 50, zoom: 1, view: 'isometric' as const }
+  const building = { type: 'insula', x: 10, y: 10, rotated: false } as const
+  city.buildings.push({ ...building })
+  const pick = (target: typeof city.buildings[number]) => {
+    const size = footprint(target)
+    const point = tileToWorld(target.x + size.width / 2, target.y + size.height / 2)
+    return buildingAtScreen(city, camera, camera.x + point.x, camera.y + point.y - buildingElevation(target))
+  }
+  assert.equal(pick(building), city.buildings[0])
+  city.buildings[0] = { ...building }
+  assert.equal(pick(building), city.buildings[0])
+  city.buildings[0].x = 20
+  assert.equal(pick(building), undefined)
+  assert.equal(pick(city.buildings[0]), city.buildings[0])
+  city.buildings[0].rotated = true
+  assert.equal(pick(city.buildings[0]), city.buildings[0])
+  city.buildings.push({ ...building })
+  assert.equal(pick(building), city.buildings[1])
+  city.buildings.reverse()
+  assert.equal(pick(building), city.buildings[0])
+  city.buildings.shift()
+  assert.equal(pick(building), undefined)
 })
 
 test('camera fit and coordinate conversion on desktop sizes', () => {

@@ -2,7 +2,7 @@ import type { BuildingType } from './city.ts'
 import { buildingAt, canPlace, emptyCity, footprint } from './city.ts'
 
 export function romanPreset() {
-  const city = emptyCity()
+  const city = { ...emptyCity(), width: 48, height: 36 }
   function place(type: BuildingType, x: number, y: number, rotated = false) {
     if (type === 'road' && ['road', 'bridge'].includes(buildingAt(city, x, y)?.type ?? '')) return
     const building = { type, x, y, rotated }

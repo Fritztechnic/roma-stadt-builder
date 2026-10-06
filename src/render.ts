@@ -36,12 +36,21 @@ function roofRise(building: Building) {
   return ({ house: 12, insula: 14, warehouse: 10, temple: 16, basilica: 14, library: 12, school: 10, bakery: 10, workshop: 10 } as Partial<Record<Building['type'], number>>)[building.type] ?? 0
 }
 
+const orderCache = new WeakMap<readonly Building[], { snapshot: (Building & { source: Building })[]; ordered: Building[] }>()
+
 function drawOrder(buildings: readonly Building[]) {
-  return [...buildings].sort((first, second) => {
+  const cached = orderCache.get(buildings)
+  if (cached && cached.snapshot.length === buildings.length && cached.snapshot.every((previous, index) => {
+    const building = buildings[index]
+    return previous.source === building && previous.type === building.type && previous.x === building.x && previous.y === building.y && previous.rotated === building.rotated
+  })) return cached.ordered
+  const ordered = [...buildings].sort((first, second) => {
     const firstSize = footprint(first)
     const secondSize = footprint(second)
     return first.x + first.y + firstSize.width + firstSize.height - second.x - second.y - secondSize.width - secondSize.height
   })
+  orderCache.set(buildings, { snapshot: buildings.map(building => ({ ...building, source: building })), ordered })
+  return ordered
 }
 
 function buildingCorners(building: Building) {
@@ -55,10 +64,13 @@ export function buildingAtScreen(city: City, camera: Camera, x: number, y: numbe
     return buildingAt(city, tile.x, tile.y)
   }
   const point = { x: (x - camera.x) / camera.zoom, y: (y - camera.y) / camera.zoom }
-  return drawOrder(city.buildings).reverse().find(building => {
+  const ordered = drawOrder(city.buildings)
+  for (let index = ordered.length - 1; index >= 0; index--) {
+    const building = ordered[index]
     const details = ({ wall: 6, tower: 6, gate: 10, statue: 24, villa: 6, bridge: 4, bakery: 18, theater: 7 } as Partial<Record<Building['type'], number>>)[building.type] ?? 0
     const elevation = buildingElevation(building) + Math.max(roofRise(building), details)
     const [back, right, front, left] = buildingCorners(building)
+    if (point.x < left.x || point.x > right.x || point.y < back.y - elevation || point.y > front.y) continue
     const polygon = [{ x: back.x, y: back.y - elevation }, { x: right.x, y: right.y - elevation }, right, front, left, { x: left.x, y: left.y - elevation }]
     let positive = false
     let negative = false
@@ -69,8 +81,8 @@ export function buildingAtScreen(city: City, camera: Camera, x: number, y: numbe
       if (cross > 0.0001) positive = true
       if (cross < -0.0001) negative = true
     }
-    return !(positive && negative)
-  })
+    if (!(positive && negative)) return building
+  }
 }
 
 function polygon(context: CanvasRenderingContext2D, points: { x: number; y: number }[], color: string) {
@@ -293,11 +305,11 @@ function drawTrees(context: CanvasRenderingContext2D, building: Building) {
   }
 }
 
-function drawBuilding(context: CanvasRenderingContext2D, building: Building, city: City, view: ViewMode = 'isometric') {
-  if (view === 'topdown') { drawSurface(context, building, city); return }
+function drawBuilding(context: CanvasRenderingContext2D, building: Building, city: City, view: ViewMode = 'isometric', occupants?: ReadonlyMap<number, Building>) {
+  if (view === 'topdown') { drawSurface(context, building, city, occupants); return }
   const elevation = buildingElevation(building)
   if (['amphitheater', 'theater', 'villa', 'baths', 'market'].includes(building.type)) {
-    if (building.type !== 'amphitheater' && building.type !== 'theater') drawSurface(context, building, city)
+    if (building.type !== 'amphitheater' && building.type !== 'theater') drawSurface(context, building, city, occupants)
     context.save()
     context.transform(0.5, -0.5, 1, 1, 0, 0)
     if (building.type === 'villa') {
@@ -315,7 +327,7 @@ function drawBuilding(context: CanvasRenderingContext2D, building: Building, cit
     context.restore()
     return
   }
-  if (building.type === 'bridge') drawSurface(context, { ...building, type: 'moat', x: building.x + (building.rotated ? 1 : 0), y: building.y + (building.rotated ? 0 : 1) }, city)
+  if (building.type === 'bridge') drawSurface(context, { ...building, type: 'moat', x: building.x + (building.rotated ? 1 : 0), y: building.y + (building.rotated ? 0 : 1) }, city, occupants)
   if (elevation > 0) {
     context.save()
     context.transform(0.5, -0.5, 1, 1, 0, 0)
@@ -327,7 +339,7 @@ function drawBuilding(context: CanvasRenderingContext2D, building: Building, cit
   }
   context.save()
   context.translate(-elevation, -elevation)
-  drawSurface(context, building, city)
+  drawSurface(context, building, city, occupants)
   context.restore()
   context.save()
   context.transform(0.5, -0.5, 1, 1, 0, 0)
@@ -380,7 +392,38 @@ function drawBuilding(context: CanvasRenderingContext2D, building: Building, cit
   context.restore()
 }
 
-function drawSurface(context: CanvasRenderingContext2D, building: Building, city: City) {
+const spriteCache = new Map<string, { canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number }>()
+
+function drawCachedBuilding(context: CanvasRenderingContext2D, building: Building, city: City, view: ViewMode = 'isometric', resolution = 1, occupants?: ReadonlyMap<number, Building>) {
+  if (building.type === 'moat' || building.type === 'bridge') { drawBuilding(context, building, city, view, occupants); return }
+  const key = `${building.type}:${building.rotated}:${view}:${resolution}`
+  let sprite = spriteCache.get(key)
+  if (!sprite) {
+    const size = footprint(building)
+    const left = view === 'topdown' ? -16 : -size.height * tileSize - 16
+    const top = -80
+    const width = (view === 'topdown' ? size.width : size.width + size.height) * tileSize + 32
+    const height = (view === 'topdown' ? size.height * tileSize : (size.width + size.height) * tileSize / 2) + 112
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(width * resolution)
+    canvas.height = Math.ceil(height * resolution)
+    const spriteContext = canvas.getContext('2d')!
+    spriteContext.scale(resolution, resolution)
+    spriteContext.translate(-left, -top)
+    if (view === 'isometric') spriteContext.transform(1, 0.5, -1, 0.5, 0, 0)
+    drawBuilding(spriteContext, { ...building, x: 0, y: 0 }, city, view)
+    sprite = { canvas, left, top, width, height }
+    if (spriteCache.size >= 96) spriteCache.delete(spriteCache.keys().next().value!)
+    spriteCache.set(key, sprite)
+  }
+  const position = tileToWorld(building.x, building.y, view)
+  context.save()
+  if (view === 'isometric') context.transform(0.5, -0.5, 1, 1, 0, 0)
+  context.drawImage(sprite.canvas, position.x + sprite.left, position.y + sprite.top, sprite.width, sprite.height)
+  context.restore()
+}
+
+function drawSurface(context: CanvasRenderingContext2D, building: Building, city: City, occupants?: ReadonlyMap<number, Building>) {
   const item = definition(building.type)
   const width = item.width * tileSize
   const height = item.height * tileSize
@@ -475,7 +518,9 @@ function drawSurface(context: CanvasRenderingContext2D, building: Building, city
   } else if (building.type === 'moat') {
     const directions = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }]
     const connected = directions.map(({ x, y }) => {
-      const neighbor = buildingAt(city, building.x + (building.rotated ? -y : x), building.y + (building.rotated ? x : y))
+      const column = building.x + (building.rotated ? -y : x)
+      const row = building.y + (building.rotated ? x : y)
+      const neighbor = column < 0 || row < 0 || column >= city.width || row >= city.height ? undefined : occupants ? occupants.get(row * city.width + column) : buildingAt(city, column, row)
       return neighbor?.type === 'moat' || neighbor?.type === 'bridge'
     })
     if (!connected.some(Boolean)) { connected[0] = true; connected[2] = true }
@@ -629,14 +674,22 @@ export type SelectionOverlay = {
   area: { from: { x: number; y: number }; to: { x: number; y: number } } | null
 }
 
-export function render(canvas: HTMLCanvasElement, city: City, camera: Camera, preview: Building | null, highlight: Building | undefined, erase: boolean, selection?: SelectionOverlay) {
-  const context = canvas.getContext('2d')!
-  const ratio = window.devicePixelRatio || 1
-  const width = canvas.clientWidth
-  const height = canvas.clientHeight
-  if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
-    canvas.width = Math.round(width * ratio)
-    canvas.height = Math.round(height * ratio)
+const sceneCache = new WeakMap<HTMLCanvasElement, {
+  layer: HTMLCanvasElement
+  width: number
+  height: number
+  ratio: number
+  cityWidth: number
+  cityHeight: number
+  camera: Camera
+  buildings: Building[]
+}>()
+
+function drawCity(context: CanvasRenderingContext2D, city: City, camera: Camera, width: number, height: number, ratio: number) {
+  const occupants = new Map<number, Building>()
+  for (const building of city.buildings) {
+    const size = footprint(building)
+    for (let row = building.y; row < building.y + size.height; row++) for (let column = building.x; column < building.x + size.width; column++) occupants.set(row * city.width + column, building)
   }
   context.setTransform(ratio, 0, 0, ratio, 0, 0)
   context.fillStyle = '#e2e7e1'
@@ -658,10 +711,20 @@ export function render(canvas: HTMLCanvasElement, city: City, camera: Camera, pr
     context.lineTo(city.width * tileSize, row * tileSize)
   }
   context.stroke()
-  for (const building of drawOrder(city.buildings).filter(building => buildingElevation(building) === 0)) drawBuilding(context, building, city, camera.view)
+  const ordered = drawOrder(city.buildings).filter(building => {
+    const size = footprint(building)
+    const corners = [tileToWorld(building.x, building.y, camera.view), tileToWorld(building.x + size.width, building.y, camera.view), tileToWorld(building.x + size.width, building.y + size.height, camera.view), tileToWorld(building.x, building.y + size.height, camera.view)]
+    const left = camera.x + (Math.min(...corners.map(point => point.x)) - 32) * camera.zoom
+    const right = camera.x + (Math.max(...corners.map(point => point.x)) + 32) * camera.zoom
+    const top = camera.y + (Math.min(...corners.map(point => point.y)) - 80) * camera.zoom
+    const bottom = camera.y + (Math.max(...corners.map(point => point.y)) + 48) * camera.zoom
+    return right >= 0 && left <= width && bottom >= 0 && top <= height
+  })
+  const resolution = Math.max(1, Math.ceil(camera.zoom * ratio))
+  for (const building of ordered) if (buildingElevation(building) === 0) drawCachedBuilding(context, building, city, camera.view, resolution, occupants)
   if (camera.view !== 'topdown') {
     context.fillStyle = '#29433626'
-    for (const building of city.buildings) {
+    for (const building of ordered) {
       const elevation = buildingElevation(building)
       if (!elevation) continue
       const size = footprint(building)
@@ -669,7 +732,36 @@ export function render(canvas: HTMLCanvasElement, city: City, camera: Camera, pr
       context.fillRect(building.x * tileSize + offset, building.y * tileSize + offset, size.width * tileSize, size.height * tileSize)
     }
   }
-  for (const building of drawOrder(city.buildings).filter(building => buildingElevation(building) > 0)) drawBuilding(context, building, city, camera.view)
+  for (const building of ordered) if (buildingElevation(building) > 0) drawCachedBuilding(context, building, city, camera.view, resolution, occupants)
+}
+
+export function render(canvas: HTMLCanvasElement, city: City, camera: Camera, preview: Building | null, highlight: Building | undefined, erase: boolean, selection?: SelectionOverlay) {
+  const context = canvas.getContext('2d')!
+  const ratio = window.devicePixelRatio || 1
+  const width = canvas.clientWidth
+  const height = canvas.clientHeight
+  if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+    canvas.width = Math.round(width * ratio)
+    canvas.height = Math.round(height * ratio)
+  }
+  let cached = sceneCache.get(canvas)
+  if (!cached || cached.width !== width || cached.height !== height || cached.ratio !== ratio || cached.cityWidth !== city.width || cached.cityHeight !== city.height || cached.camera.x !== camera.x || cached.camera.y !== camera.y || cached.camera.zoom !== camera.zoom || cached.camera.view !== camera.view || cached.buildings.length !== city.buildings.length || cached.buildings.some((previous, index) => {
+    const building = city.buildings[index]
+    return previous.type !== building.type || previous.x !== building.x || previous.y !== building.y || previous.rotated !== building.rotated
+  })) {
+    const layer = cached?.layer ?? document.createElement('canvas')
+    layer.width = canvas.width
+    layer.height = canvas.height
+    drawCity(layer.getContext('2d')!, city, camera, width, height, ratio)
+    cached = { layer, width, height, ratio, cityWidth: city.width, cityHeight: city.height, camera: { ...camera }, buildings: city.buildings.map(building => ({ ...building })) }
+    sceneCache.set(canvas, cached)
+  }
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.drawImage(cached.layer, 0, 0)
+  context.setTransform(ratio, 0, 0, ratio, 0, 0)
+  context.translate(camera.x, camera.y)
+  context.scale(camera.zoom, camera.zoom)
+  if (camera.view !== 'topdown') context.transform(1, 0.5, -1, 0.5, 0, 0)
   if (selection) {
     for (const building of selection.buildings) {
       const size = footprint(building)

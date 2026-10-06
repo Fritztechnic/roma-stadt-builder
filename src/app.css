@@ -36,6 +36,7 @@ button.active { border-color: #94b2a3; background: #dfebe1; color: var(--accent)
 .selection { border-top: 1px solid var(--border); padding: 14px 6px; min-height: 72px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .selection span { color: #68746b; font-size: 12px; }
 .map { position: relative; overflow: hidden; min-height: 0; }
+#hover-label { position: absolute; z-index: 2; pointer-events: none; max-width: calc(100% - 16px); padding: 5px 8px; border: 1px solid #aebbad; border-radius: 4px; background: #f9faf7; color: #24352e; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 5px #24352e20; }
 .views { position: absolute; top: 16px; left: 16px; display: flex; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 4px; background: #f9faf7; }
 .views button { display: flex; align-items: center; justify-content: center; gap: 7px; width: 120px; height: 32px; font-size: 12px; }
 canvas { width: 100%; height: 100%; display: block; touch-action: none; }

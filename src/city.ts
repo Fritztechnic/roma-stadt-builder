@@ -35,11 +35,17 @@ export type Building = { type: BuildingType; x: number; y: number; rotated: bool
 export type City = { version: 1; width: number; height: number; buildings: Building[] }
 
 export function emptyCity(): City {
-  return { version: 1, width: 48, height: 36, buildings: [] }
+  return { version: 1, width: 96, height: 72, buildings: [] }
 }
 
+export function expandCity(city: City): City {
+  return { ...city, width: Math.min(128, city.width * 2), height: Math.min(128, city.height * 2) }
+}
+
+const definitions = new Map(catalog.map(item => [item.type, item] as const))
+
 export function definition(type: BuildingType) {
-  return catalog.find(item => item.type === type)!
+  return definitions.get(type)!
 }
 
 export function footprint(building: Building) {

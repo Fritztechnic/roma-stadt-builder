@@ -1,13 +1,13 @@
-import { Bath, Box, Building2, createIcons, Download, Droplets, Eraser, FilePlus2, FolderOpen, Grid2X2, Hand, House, Landmark, Map, MousePointer2, Redo2, RotateCw, Route, Save, Scan, Store, Trees, Undo2, Upload, Warehouse, Waves, ZoomIn, ZoomOut } from 'lucide'
+import { Bath, Box, Building2, createIcons, Download, Droplets, Eraser, Expand, FilePlus2, FolderOpen, Grid2X2, Hand, House, Landmark, Map, MousePointer2, Redo2, RotateCw, Route, Save, Scan, Store, Trees, Undo2, Upload, Warehouse, Waves, ZoomIn, ZoomOut } from 'lucide'
 import './app.css'
 import type { Building, BuildingType, City } from './city.ts'
-import { buildingAt, buildingsInArea, canPlace, canReplaceBuildings, catalog, definition, emptyCity, footprint, History, parseCity, replaceBuildings } from './city.ts'
+import { buildingAt, buildingsInArea, canPlace, canReplaceBuildings, catalog, definition, emptyCity, expandCity, footprint, History, parseCity, replaceBuildings } from './city.ts'
 import { romanPreset } from './preset.ts'
 import type { Camera, ViewMode } from './render.ts'
 import { buildingAtScreen, fitCamera, render, screenToTile } from './render.ts'
 
 const storageKey = 'roma-city-v1'
-const icons = { Route, Grid2X2, Droplets, Waves, House, Building2, Landmark, Store, Bath, Warehouse, Trees, MousePointer2, Hand, Eraser, RotateCw, Undo2, Redo2, Save, FolderOpen, Download, Upload, FilePlus2, ZoomIn, ZoomOut, Scan, Map, Box }
+const icons = { Route, Grid2X2, Droplets, Waves, House, Building2, Landmark, Store, Bath, Warehouse, Trees, MousePointer2, Hand, Eraser, Expand, RotateCw, Undo2, Redo2, Save, FolderOpen, Download, Upload, FilePlus2, ZoomIn, ZoomOut, Scan, Map, Box }
 function tool(id: string, icon: string, title: string) {
   return `<button id="${id}" title="${title}" aria-label="${title}"><i data-lucide="${icon}"></i></button>`
 }
@@ -17,6 +17,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       ${tool('new', 'file-plus-2', 'Neue Stadt')}${tool('save', 'save', 'Lokal speichern')}${tool('load', 'folder-open', 'Lokale Stadt laden')}
       ${tool('export', 'download', 'Stadt exportieren')}${tool('import', 'upload', 'Stadt importieren')}
       ${tool('preset', 'map', 'Roemische Beispielstadt laden')}
+      ${tool('expand', 'expand', 'Karte vergroessern')}
     </div><div class="separator"></div>
     <div class="tools" role="toolbar" aria-label="Verlauf">${tool('undo', 'undo-2', 'Rueckgaengig')}${tool('redo', 'redo-2', 'Wiederholen')}</div>
     <span id="save-state">Sandbox</span>
@@ -27,7 +28,8 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     </div><div id="catalog">${[...new Set(catalog.map(item => item.group))].map(group => `
       <h3>${group}</h3>${catalog.filter(item => item.group === group).map(item => `<button class="building" data-type="${item.type}" aria-pressed="false"><i data-lucide="${item.icon}"></i><span>${item.name}</span><small>${item.width} x ${item.height}</small></button>`).join('')}`).join('')}
     </div><section class="selection"><strong id="selected-name">Strasse</strong><span id="selected-size">1 x 1 Felder</span></section>
-  </aside><section class="map"><canvas tabindex="0" aria-label="Stadtkarte"></canvas>
+  </aside><section class="map"><canvas tabindex="0" aria-label="Stadtkarte" aria-describedby="hover-label"></canvas>
+    <div id="hover-label" role="tooltip" hidden></div>
     <div class="views" role="group" aria-label="Ansicht">
       <button id="view-topdown" title="Draufsicht" aria-pressed="false"><i data-lucide="grid-2-x-2"></i>Draufsicht</button>
       <button id="view-isometric" title="Isometrische Ansicht" aria-pressed="true"><i data-lucide="box"></i>Isometrie</button>
@@ -78,14 +80,29 @@ function movedBuildings() {
   const offsetY = hover.y - gesture.tile.y
   return selectedBuildings.map(building => ({ ...building, x: building.x + offsetX, y: building.y + offsetY }))
 }
+let framePending = false
 function refresh() {
+  if (framePending) return
+  framePending = true
+  requestAnimationFrame(() => { framePending = false; drawFrame() })
+}
+function drawFrame() {
   for (const view of ['topdown', 'isometric'] as const) {
     button(`view-${view}`).classList.toggle('active', camera.view === view)
     button(`view-${view}`).setAttribute('aria-pressed', String(camera.view === view))
     button(`view-${view}`).disabled = gesture !== null
   }
   const preview = mode === 'build' && hover && !spaceDown && gesture?.kind !== 'pan' ? { type: selected, ...hover, rotated } : null
-  const highlight = hover && pointer && (mode === 'inspect' || mode === 'erase') ? buildingAtScreen(city, camera, pointer.x, pointer.y) : undefined
+  const target = hover && pointer && !spaceDown && !gesture ? buildingAtScreen(city, camera, pointer.x, pointer.y) : undefined
+  const highlight = mode === 'inspect' || mode === 'erase' ? target : undefined
+  const label = document.getElementById('hover-label')!
+  label.hidden = !target
+  if (target && pointer) {
+    const size = footprint(target)
+    label.textContent = `${definition(target.type).name} - ${size.width} x ${size.height}`
+    label.style.left = `${Math.max(8, Math.min(pointer.x + 14, canvas.clientWidth - label.offsetWidth - 8))}px`
+    label.style.top = `${Math.max(8, Math.min(pointer.y + 14, canvas.clientHeight - label.offsetHeight - 8))}px`
+  }
   const moving = movedBuildings()
   render(canvas, city, camera, preview, highlight, mode === 'erase', {
     buildings: selectedBuildings,
@@ -95,6 +112,7 @@ function refresh() {
   })
   button('undo').disabled = !history.canUndo
   button('redo').disabled = !history.canRedo
+  button('expand').disabled = gesture !== null || (city.width >= 128 && city.height >= 128)
   button('rotate').disabled = mode !== 'build' && (mode !== 'inspect' || selectedBuildings.length === 0)
   for (const toolMode of ['inspect', 'pan', 'erase'] as const) {
     button(toolMode).classList.toggle('active', mode === toolMode)
@@ -238,10 +256,10 @@ canvas.addEventListener('pointercancel', () => {
   else finishGesture()
 })
 canvas.addEventListener('lostpointercapture', finishGesture)
-canvas.addEventListener('pointerleave', () => { if (!gesture) { hover = null; refresh() } })
+canvas.addEventListener('pointerleave', () => { if (!gesture) { hover = null; pointer = null; refresh() } })
 canvas.addEventListener('contextmenu', event => event.preventDefault())
 function zoom(factor: number, x = canvas.clientWidth / 2, y = canvas.clientHeight / 2) {
-  const next = Math.max(0.25, Math.min(3, camera.zoom * factor))
+  const next = Math.max(0.05, Math.min(3, camera.zoom * factor))
   const ratio = next / camera.zoom
   camera.x = x - (x - camera.x) * ratio
   camera.y = y - (y - camera.y) * ratio
@@ -270,6 +288,16 @@ button('zoom-out').onclick = () => zoom(1 / 1.2)
 button('undo').onclick = () => { city = history.undo(city); selectedBuildings = []; save(); refresh() }
 button('redo').onclick = () => { city = history.redo(city); selectedBuildings = []; save(); refresh() }
 button('save').onclick = () => save(true)
+button('expand').onclick = () => {
+  if (gesture || (city.width >= 128 && city.height >= 128)) return
+  const before = JSON.stringify(city)
+  city = expandCity(city)
+  hover = null
+  pointer = null
+  commit(before)
+  fit()
+  status(`Karte auf ${city.width} x ${city.height} Felder erweitert.`)
+}
 function replaceCity(next: City) {
   const before = JSON.stringify(city)
   city = next

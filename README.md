@@ -24,6 +24,15 @@ Stadtraster und erscheint in Isometrie deshalb als Raute. Die Bau-, Verlaufs- un
 Speicherlogik bleibt unveraendert; bestehende Spielstaende sind kompatibel.
 Die Gebaeude sind geometrische Platzhalter, keine ausgearbeiteten Sprites.
 
+Die unveraenderte Stadtansicht wird als Canvas-Ebene zwischengespeichert;
+Vorschau, Hover und Auswahl werden darueber gezeichnet. Kamera-, Karten- und
+Gebaeudeaenderungen erneuern den Cache. Sortierreihenfolgen werden wiederverwendet,
+Gebaeude ausserhalb des sichtbaren Ausschnitts nicht gezeichnet und UI-Updates
+auf einen Aufruf pro Animationsframe gebuendelt.
+Gebaeudemodelle werden je Typ, Drehung, Ansicht und Pixeldichte als Canvas-Sprites
+wiederverwendet; der Spritecache ist auf 96 Eintraege begrenzt. Wassergraben und
+Bruecken bleiben dynamisch und nutzen beim Zeichnen eine Rastertabelle fuer Nachbarn.
+
 ## Start
 
 Node.js ab 22.18 (fuer die nativen TypeScript-Tests) und npm:
@@ -58,6 +67,10 @@ und auf der Website importieren.
 ## Bedienung
 
 - Objekt im Baukatalog waehlen, dann mit Linksklick platzieren.
+- Beim Darueberfahren zeigt ein Tooltip den Gebaeudenamen und die Grundflaeche,
+	auch im Bauwerkzeug. Beim Ziehen wird der Tooltip ausgeblendet.
+- Das Erweiterungssymbol oben verdoppelt die Kartengroesse bis maximal 128 x 128.
+	Vorhandene Gebaeude bleiben stehen; die Erweiterung ist rueckgaengig machbar.
 - Strassen, Aquaedukte, Stadtmauern und Wassergraben mit gedrueckter linker Maustaste ziehen.
 - Gruene Vorschau: freier Standort; rote Vorschau: Standort belegt oder ausserhalb.
 - Rechtsklick auf ein Gebaeude: drehen; bei ausgewaehlten Objekten die Auswahl drehen.
@@ -119,7 +132,9 @@ Import prueft Version, Kartengroesse, Gebaeudetypen und Ueberschneidungen, bevor
 die aktuelle Stadt ersetzt wird. Neue Stadt, Laden und Import fragen nach einer
 Bestaetigung; Ersetzen kann waehrend der Sitzung rueckgaengig gemacht werden.
 Bei Speicherfehlern bitte exportieren. Importlimit: 2 MB; Karten: 8 bis 128 Felder
-pro Seite. Die Standardkarte hat 48 x 36 Felder.
+pro Seite. Neue leere Karten haben 96 x 72 Felder. Bestehende Spielstaende behalten
+ihre Abmessungen und koennen ueber das Erweiterungssymbol vergroessert werden.
+Das kompakte Preset bleibt 48 x 36 Felder gross und ist ebenfalls erweiterbar.
 
 ## Erweiterung
 
