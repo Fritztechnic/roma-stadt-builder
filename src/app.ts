@@ -1,12 +1,13 @@
-import { Bath, Building2, createIcons, Download, Droplets, Eraser, FilePlus2, FolderOpen, Grid2X2, Hand, House, Landmark, Map, MousePointer2, Redo2, RotateCw, Route, Save, Scan, Store, Trees, Undo2, Upload, Warehouse, Waves, ZoomIn, ZoomOut } from 'lucide'
+import { Bath, Box, Building2, createIcons, Download, Droplets, Eraser, FilePlus2, FolderOpen, Grid2X2, Hand, House, Landmark, Map, MousePointer2, Redo2, RotateCw, Route, Save, Scan, Store, Trees, Undo2, Upload, Warehouse, Waves, ZoomIn, ZoomOut } from 'lucide'
 import './app.css'
 import type { Building, BuildingType, City } from './city.ts'
 import { buildingAt, buildingsInArea, canPlace, canReplaceBuildings, catalog, definition, emptyCity, footprint, History, parseCity, replaceBuildings } from './city.ts'
 import { romanPreset } from './preset.ts'
-import { fitCamera, render, screenToTile } from './render.ts'
+import type { Camera, ViewMode } from './render.ts'
+import { buildingAtScreen, fitCamera, render, screenToTile } from './render.ts'
 
 const storageKey = 'roma-city-v1'
-const icons = { Route, Grid2X2, Droplets, Waves, House, Building2, Landmark, Store, Bath, Warehouse, Trees, MousePointer2, Hand, Eraser, RotateCw, Undo2, Redo2, Save, FolderOpen, Download, Upload, FilePlus2, ZoomIn, ZoomOut, Scan, Map }
+const icons = { Route, Grid2X2, Droplets, Waves, House, Building2, Landmark, Store, Bath, Warehouse, Trees, MousePointer2, Hand, Eraser, RotateCw, Undo2, Redo2, Save, FolderOpen, Download, Upload, FilePlus2, ZoomIn, ZoomOut, Scan, Map, Box }
 function tool(id: string, icon: string, title: string) {
   return `<button id="${id}" title="${title}" aria-label="${title}"><i data-lucide="${icon}"></i></button>`
 }
@@ -27,6 +28,10 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <h3>${group}</h3>${catalog.filter(item => item.group === group).map(item => `<button class="building" data-type="${item.type}" aria-pressed="false"><i data-lucide="${item.icon}"></i><span>${item.name}</span><small>${item.width} x ${item.height}</small></button>`).join('')}`).join('')}
     </div><section class="selection"><strong id="selected-name">Strasse</strong><span id="selected-size">1 x 1 Felder</span></section>
   </aside><section class="map"><canvas tabindex="0" aria-label="Stadtkarte"></canvas>
+    <div class="views" role="group" aria-label="Ansicht">
+      <button id="view-topdown" title="Draufsicht" aria-pressed="false"><i data-lucide="grid-2-x-2"></i>Draufsicht</button>
+      <button id="view-isometric" title="Isometrische Ansicht" aria-pressed="true"><i data-lucide="box"></i>Isometrie</button>
+    </div>
     <div class="zoom tools" role="toolbar" aria-label="Kamera">${tool('zoom-out', 'zoom-out', 'Verkleinern')}<output id="zoom-value"></output>${tool('zoom-in', 'zoom-in', 'Vergroessern')}${tool('fit', 'scan', 'Ganze Karte')}</div>
   </section></main>
   <footer><span id="status" role="status" aria-live="polite">Bereit</span><span id="coordinates"></span><span id="count"></span></footer>
@@ -34,13 +39,15 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 `
 createIcons({ icons })
 const canvas = document.querySelector('canvas')!
-const camera = { x: 0, y: 0, zoom: 1 }
+const camera: Camera = { x: 0, y: 0, zoom: 1, view: 'isometric' }
+try { if (localStorage.getItem('roma-view-v1') === 'topdown') camera.view = 'topdown' } catch { }
 const history = new History()
 let city = emptyCity()
 let selected: BuildingType = 'road'
 let mode: 'build' | 'inspect' | 'pan' | 'erase' = 'build'
 let rotated = false
 let hover: { x: number; y: number } | null = null
+let pointer: { x: number; y: number } | null = null
 let spaceDown = false
 let selectedBuildings: Building[] = []
 let gesture: { kind: 'paint' | 'pan' | 'select' | 'move'; before: string; lastX: number; lastY: number; tile: { x: number; y: number }; baseSelection: Building[] } | null = null
@@ -72,8 +79,13 @@ function movedBuildings() {
   return selectedBuildings.map(building => ({ ...building, x: building.x + offsetX, y: building.y + offsetY }))
 }
 function refresh() {
+  for (const view of ['topdown', 'isometric'] as const) {
+    button(`view-${view}`).classList.toggle('active', camera.view === view)
+    button(`view-${view}`).setAttribute('aria-pressed', String(camera.view === view))
+    button(`view-${view}`).disabled = gesture !== null
+  }
   const preview = mode === 'build' && hover && !spaceDown && gesture?.kind !== 'pan' ? { type: selected, ...hover, rotated } : null
-  const highlight = hover && (mode === 'inspect' || mode === 'erase') ? buildingAt(city, hover.x, hover.y) : undefined
+  const highlight = hover && pointer && (mode === 'inspect' || mode === 'erase') ? buildingAtScreen(city, camera, pointer.x, pointer.y) : undefined
   const moving = movedBuildings()
   render(canvas, city, camera, preview, highlight, mode === 'erase', {
     buildings: selectedBuildings,
@@ -107,6 +119,16 @@ function refresh() {
   canvas.style.cursor = spaceDown || mode === 'pan' || gesture?.kind === 'pan' ? gesture ? 'grabbing' : 'grab' : mode === 'inspect' ? 'default' : 'crosshair'
 }
 function fit() { fitCamera(camera, city, canvas.clientWidth, canvas.clientHeight); refresh() }
+function switchView(view: ViewMode) {
+  if (gesture || camera.view === view) return
+  camera.view = view
+  hover = null
+  pointer = null
+  try { localStorage.setItem('roma-view-v1', view) } catch { }
+  fit()
+}
+button('view-topdown').onclick = () => switchView('topdown')
+button('view-isometric').onclick = () => switchView('isometric')
 function commit(before: string) { if (history.record(before, city)) save(); refresh() }
 function point(event: PointerEvent | WheelEvent) {
   const bounds = canvas.getBoundingClientRect()
@@ -114,7 +136,7 @@ function point(event: PointerEvent | WheelEvent) {
 }
 function paint(tile: { x: number; y: number }, announce = false) {
   if (mode === 'erase') {
-    const target = buildingAt(city, tile.x, tile.y)
+    const target = announce && pointer ? buildingAtScreen(city, camera, pointer.x, pointer.y) : buildingAt(city, tile.x, tile.y)
     if (target) city.buildings.splice(city.buildings.indexOf(target), 1)
   } else if (mode === 'build') {
     const building = { type: selected, ...tile, rotated }
@@ -144,10 +166,11 @@ canvas.addEventListener('pointerdown', event => {
   if (gesture || ![0, 1, 2].includes(event.button)) return
   canvas.focus()
   const position = point(event)
+  pointer = position
   const tile = screenToTile(camera, position.x, position.y)
   hover = tile
   if (event.button === 2 && !spaceDown && mode !== 'pan') {
-    const target = buildingAt(city, tile.x, tile.y)
+    const target = buildingAtScreen(city, camera, position.x, position.y)
     if (target) {
       mode = 'inspect'
       rotateBuildings(selectedBuildings.includes(target) ? selectedBuildings : [target])
@@ -159,7 +182,7 @@ canvas.addEventListener('pointerdown', event => {
     gesture = { kind: 'pan', before: '', lastX: position.x, lastY: position.y, tile, baseSelection: [] }
   } else if (mode === 'inspect' || event.shiftKey) {
     mode = 'inspect'
-    const target = buildingAt(city, tile.x, tile.y)
+    const target = buildingAtScreen(city, camera, position.x, position.y)
     if (target && event.shiftKey) {
       selectedBuildings = selectedBuildings.includes(target) ? selectedBuildings.filter(building => building !== target) : [...selectedBuildings, target]
     } else if (target) {
@@ -179,6 +202,7 @@ canvas.addEventListener('pointerdown', event => {
 })
 canvas.addEventListener('pointermove', event => {
   const position = point(event)
+  pointer = position
   if (gesture?.kind === 'pan') {
     camera.x += position.x - gesture.lastX
     camera.y += position.y - gesture.lastY
@@ -187,7 +211,7 @@ canvas.addEventListener('pointermove', event => {
   }
   hover = screenToTile(camera, position.x, position.y)
   if (gesture?.kind === 'select') selectedBuildings = [...new Set([...gesture.baseSelection, ...buildingsInArea(city, gesture.tile, hover)])]
-  if (gesture?.kind === 'paint' && (mode === 'erase' || selected === 'road' || selected === 'aqueduct')) {
+  if (gesture?.kind === 'paint' && (mode === 'erase' || selected === 'road' || selected === 'aqueduct' || selected === 'wall' || selected === 'moat')) {
     stroke(gesture.tile, hover)
     gesture.tile = hover
   }

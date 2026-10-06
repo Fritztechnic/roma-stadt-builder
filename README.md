@@ -3,6 +3,27 @@
 Desktop-Sandbox im Browser mit TypeScript, Vite und Canvas 2D. Keine Wirtschaft,
 Versorgungssimulation oder mobilen Bedienelemente. Die Grafiken sind Platzhalter.
 
+## Ansichten
+
+Die Leiste oben links auf der Karte schaltet zwischen Draufsicht und Isometrie
+um. Die Ansicht wird lokal gespeichert;
+beim Umschalten wird die Karte eingepasst. Stadt, Auswahl und Undo-Verlauf
+bleiben erhalten. Waehrend eines Bau-/Verschiebestrichs ist der Schalter gesperrt.
+
+Die Isometrie zeigt rautenfoermige Felder, geneigte Ziegeldaecher, schattierte
+Fassaden mit Fenstern, Saeulengaenge, Aquaeduktboegen, Baeume und Bodenschatten.
+Arenen besitzen gerundete Arkaden und abgestufte Raenge, Villen offene Innenhoefe,
+Mauern plastische Zinnen und Steinlagen. Marktstaende, Thermenhof, Brueckenboegen,
+Baeckereischornstein und Getreidehalme unterscheiden weitere Bausteine.
+Alles wird mit Canvas 2D gezeichnet, ohne 3D-Modelle oder zusaetzliche Pakete.
+Die Draufsicht bleibt als flache, uebersichtliche Alternative verfuegbar.
+
+Bauen nutzt die Grundflaeche auf dem Boden; Auswahl, Rechtsklick und einzelner
+Abriss treffen auch sichtbare Daecher und Waende. Der Auswahlrahmen folgt dem
+Stadtraster und erscheint in Isometrie deshalb als Raute. Die Bau-, Verlaufs- und
+Speicherlogik bleibt unveraendert; bestehende Spielstaende sind kompatibel.
+Die Gebaeude sind geometrische Platzhalter, keine ausgearbeiteten Sprites.
+
 ## Start
 
 Node.js ab 22.18 (fuer die nativen TypeScript-Tests) und npm:
@@ -24,10 +45,20 @@ npm run preview
 Der Ordner `dist` kann auf einem statischen Webhost veroeffentlicht werden.
 Es gibt keinen Server fuer Konten oder gemeinsame Spielstaende.
 
+## GitHub Pages
+
+Die Website wird unter https://fritztechnic.github.io/roma-stadt-builder/ bereitgestellt.
+Der Workflow `.github/workflows/pages.yml` testet und baut jeden Push auf `main`
+mit Node.js 24 und veroeffentlicht `dist` auf GitHub Pages. Er kann auch manuell
+ueber GitHub Actions gestartet werden. Relative Asset-Pfade im Build erlauben
+den Betrieb unter dem Repository-Unterpfad. Spielstaende auf der Pages-Adresse
+sind vom lokalen Entwicklungsserver getrennt; fuer die Uebernahme JSON exportieren
+und auf der Website importieren.
+
 ## Bedienung
 
 - Objekt im Baukatalog waehlen, dann mit Linksklick platzieren.
-- Strassen und Aquaedukte mit gedrueckter linker Maustaste ziehen.
+- Strassen, Aquaedukte, Stadtmauern und Wassergraben mit gedrueckter linker Maustaste ziehen.
 - Gruene Vorschau: freier Standort; rote Vorschau: Standort belegt oder ausserhalb.
 - Rechtsklick auf ein Gebaeude: drehen; bei ausgewaehlten Objekten die Auswahl drehen.
 - Rechtsklick auf freien Boden beim Bauen: Bauvorschau drehen.
@@ -54,11 +85,27 @@ Verlauf und Kamera werden nicht gespeichert.
 
 ## Beispielstadt
 
+Der Baukatalog enthaelt 29 Module: Infrastruktur, Wohnen, oeffentliche Gebaeude,
+Unterhaltung, Wirtschaft, Landwirtschaft, Befestigung und Freiraum. Neu sind
+Stadtmauer, Stadttor, Wachturm, Bruecke, Reservoir, Villa, Basilika, Schule,
+Bibliothek, Theater, Amphitheater, Baeckerei, Werkstatt, Feld, Obstgarten,
+Statue und Wassergraben. Alle Objekte sind frei platzierbar, drehbar, verschiebbar und in
+beiden Ansichten verfuegbar. Es gibt weiterhin keine Produktions- oder
+Versorgungseffekte. Wassergraben verbindet benachbarte Segmente automatisch,
+auch um Ecken. Bruecken zeigen Wasser unter dem mittleren Bogen; alle Bausteine
+belegen weiterhin getrennte Rasterflaechen und lassen sich nicht ueberlagern.
+Das Feld verwendet intern weiterhin `farm`, damit alte Spielstaende lesbar bleiben.
+
 Das Kartensymbol oben laedt nach Bestaetigung eine roemische Beispielstadt:
-rechtwinkliges Strassennetz, Forum und Tempel im Zentrum, Wohnquartiere, Markt,
-Therme, Lagerhaeuser, Gaerten, Brunnen und ein Aquaedukt. Die Stadt ist frei
-bearbeitbar. Das Laden ersetzt den aktuellen Spielstand und kann rueckgaengig
-gemacht werden; wichtige eigene Staedte vorher exportieren.
+Der kompakte Stadtplan nutzt die gesamten 48 x 36 Felder, ohne unbelegte Flaechen.
+Mauer, Wachtuerme, Wassergraben und vier Stadttore umschliessen dichte Quartiere.
+Ein Kanal mit fuenf Bruecken trennt die Stadthaelften; Ringstrasse, Hauptstrassen
+und schmale Gassen bilden ein zusammenhaengendes Wegenetz. Jedes groessere
+Gebaeude hat Strassenzugang. Forum, Tempel und Basilika bilden das Zentrum,
+mit Arenen im Westen, Villen und Wasserversorgung im Nordosten sowie
+Werkstaetten, Feldern und Obstgaerten im Suedwesten. Alle 29 Module sind vertreten.
+Die Stadt ist frei bearbeitbar. Das Laden ersetzt den aktuellen Spielstand und
+kann rueckgaengig gemacht werden; wichtige eigene Staedte vorher exportieren.
 
 ## Spielstaende
 

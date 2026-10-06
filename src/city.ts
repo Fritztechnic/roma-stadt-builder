@@ -11,6 +11,23 @@ export const catalog = [
   { type: 'baths', name: 'Therme', group: 'Oeffentlich', width: 3, height: 3, color: '#749da9', icon: 'Bath' },
   { type: 'warehouse', name: 'Lagerhaus', group: 'Wirtschaft', width: 3, height: 2, color: '#958978', icon: 'Warehouse' },
   { type: 'garden', name: 'Garten', group: 'Freiraum', width: 2, height: 2, color: '#518967', icon: 'Trees' },
+  { type: 'wall', name: 'Stadtmauer', group: 'Befestigung', width: 1, height: 1, color: '#b4b0a0', icon: 'Grid2X2' },
+  { type: 'gate', name: 'Stadttor', group: 'Befestigung', width: 3, height: 1, color: '#c2b79d', icon: 'Landmark' },
+  { type: 'tower', name: 'Wachturm', group: 'Befestigung', width: 1, height: 1, color: '#a09c89', icon: 'Building2' },
+  { type: 'bridge', name: 'Bruecke', group: 'Infrastruktur', width: 1, height: 3, color: '#c1bca8', icon: 'Route' },
+  { type: 'reservoir', name: 'Reservoir', group: 'Infrastruktur', width: 3, height: 2, color: '#528eae', icon: 'Waves' },
+  { type: 'villa', name: 'Villa', group: 'Wohnen', width: 3, height: 3, color: '#ce8065', icon: 'House' },
+  { type: 'basilica', name: 'Basilika', group: 'Oeffentlich', width: 4, height: 2, color: '#dbceb2', icon: 'Landmark' },
+  { type: 'school', name: 'Schule', group: 'Oeffentlich', width: 2, height: 2, color: '#c89d60', icon: 'Building2' },
+  { type: 'library', name: 'Bibliothek', group: 'Oeffentlich', width: 3, height: 2, color: '#b7bbcc', icon: 'Landmark' },
+  { type: 'theater', name: 'Theater', group: 'Unterhaltung', width: 4, height: 3, color: '#cbbb98', icon: 'Landmark' },
+  { type: 'amphitheater', name: 'Amphitheater', group: 'Unterhaltung', width: 5, height: 4, color: '#d5c8a9', icon: 'Landmark' },
+  { type: 'bakery', name: 'Baeckerei', group: 'Wirtschaft', width: 2, height: 2, color: '#ce965c', icon: 'Store' },
+  { type: 'workshop', name: 'Werkstatt', group: 'Wirtschaft', width: 2, height: 2, color: '#ad7865', icon: 'Warehouse' },
+  { type: 'farm', name: 'Feld', group: 'Landwirtschaft', width: 4, height: 3, color: '#b9a35d', icon: 'Grid2X2' },
+  { type: 'orchard', name: 'Obstgarten', group: 'Landwirtschaft', width: 3, height: 3, color: '#739858', icon: 'Trees' },
+  { type: 'statue', name: 'Statue', group: 'Freiraum', width: 1, height: 1, color: '#e3dfcf', icon: 'Landmark' },
+  { type: 'moat', name: 'Wassergraben', group: 'Befestigung', width: 1, height: 1, color: '#438d9d', icon: 'Waves' },
 ] as const
 
 export type BuildingType = typeof catalog[number]['type']
